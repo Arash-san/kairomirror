@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain, Menu, screen, shell } from "electron";
-import { autoUpdater } from "electron-updater";
+import electronUpdater from "electron-updater";
 import { AdbServerClient } from "@yume-chan/adb";
 import { AdbScrcpyClient, AdbScrcpyOptionsLatest } from "@yume-chan/adb-scrcpy";
 import { AdbServerNodeTcpConnector } from "@yume-chan/adb-server-node-tcp";
@@ -25,6 +25,7 @@ import { fileURLToPath } from "node:url";
 import yauzl from "yauzl";
 
 const require = createRequire(import.meta.url);
+const { autoUpdater } = electronUpdater;
 const ApkParser = require("app-info-parser/src/apk") as new (apkPath: string) => { parse: () => Promise<{ icon?: unknown }> };
 const ManifestXmlParser = require("app-info-parser/src/xml-parser/manifest") as new (
   buffer: Buffer,
