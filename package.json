@@ -1,0 +1,99 @@
+{
+  "name": "kairomirror",
+  "version": "0.1.0",
+  "main": "dist-electron/main.js",
+  "type": "module",
+  "scripts": {
+    "generate:options": "node scripts/generate-scrcpy-options.mjs",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "build:renderer": "vite build",
+    "build": "npm run generate:options && npm run build:electron && npm run build:renderer",
+    "dev": "npm run generate:options && npm run build:electron && concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron . --dev\"",
+    "start": "npm run build && electron .",
+    "dist": "npm run build && electron-builder --win dir",
+    "dist:win": "npm run build && electron-builder --win nsis",
+    "release": "npm run build && electron-builder --win nsis --publish always"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "description": "A Windows app for Android mirroring, app windows, and webcam sharing powered by scrcpy 4.0.",
+  "build": {
+    "appId": "dev.arash.kairomirror",
+    "productName": "KairoMirror",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "vendor/scrcpy-win64-v4.0",
+        "to": "vendor/scrcpy-win64-v4.0"
+      },
+      {
+        "from": "vendor/obs-virtualcam/runtime",
+        "to": "vendor/obs-virtualcam/runtime"
+      },
+      {
+        "from": "vendor/obs-virtualcam/writer",
+        "to": "vendor/obs-virtualcam/writer"
+      }
+    ],
+    "win": {
+      "signAndEditExecutable": false,
+      "signExts": [],
+      "verifyUpdateCodeSignature": false,
+      "target": [
+        "dir",
+        "nsis"
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "Arash-san",
+      "repo": "kairomirror"
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^25.7.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@types/yauzl": "^2.10.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "concurrently": "^9.2.1",
+    "electron": "^42.0.1",
+    "electron-builder": "^26.8.1",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.12",
+    "wait-on": "^9.0.10"
+  },
+  "dependencies": {
+    "@yume-chan/adb": "^2.6.0",
+    "@yume-chan/adb-daemon-webusb": "^2.3.2",
+    "@yume-chan/adb-scrcpy": "^2.3.2",
+    "@yume-chan/adb-server-node-tcp": "^2.5.2",
+    "@yume-chan/async": "^4.1.3",
+    "@yume-chan/scrcpy": "^2.3.0",
+    "@yume-chan/scrcpy-decoder-webcodecs": "^2.5.3",
+    "@yume-chan/stream-extra": "^2.5.3",
+    "app-info-parser": "^1.1.6",
+    "electron-updater": "^6.8.3",
+    "electron-updater": "^6.6.8",
+    "lucide-react": "^1.14.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "yauzl": "^3.3.0"
+  }
+}

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+dist-electron/
+release/
+tmp/
+vendor/obs-studio/
+vendor/obs-virtualcam/*.zip
+*.log
+*.tmp
+vendor/scrcpy-4.0/
+vendor/*.zip
