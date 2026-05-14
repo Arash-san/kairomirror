@@ -15,7 +15,7 @@
     "release": "npm run build && electron-builder --win nsis --publish always"
   },
   "keywords": [],
-  "author": "",
+  "author": "inquirelab",
   "license": "MIT",
   "description": "A Windows app for Android mirroring, app windows, and webcam sharing powered by scrcpy 4.0.",
   "build": {

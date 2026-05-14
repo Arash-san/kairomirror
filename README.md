@@ -1,11 +1,15 @@
 <p align="center">
-  <img src="assets/kairomirror-banner.png" alt="KairoMirror banner" width="100%">
+  <img src="assets/kairomirror-readme-hero.png" alt="KairoMirror app interface" width="100%">
 </p>
 
 <h1 align="center">KairoMirror</h1>
 
 <p align="center">
   A Windows desktop app for scrcpy 4.0 with phone mirroring, Android app windows, cached app icons, audio routing, and an OBS-powered virtual webcam.
+</p>
+
+<p align="center">
+  Developed by <strong>inquirelab</strong>
 </p>
 
 <p align="center">
@@ -65,4 +69,4 @@ Publish a release from CI:
 
 ## Credits
 
-KairoMirror bundles [scrcpy 4.0](https://github.com/Genymobile/scrcpy) and uses OBS Studio's open-source DirectShow virtual-camera driver code for the Windows webcam device.
+KairoMirror is developed by inquirelab. It bundles [scrcpy 4.0](https://github.com/Genymobile/scrcpy) and uses OBS Studio's open-source DirectShow virtual-camera driver code for the Windows webcam device.
