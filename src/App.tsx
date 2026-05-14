@@ -74,6 +74,17 @@ interface AppSessionInfo {
   name: string;
   packageName: string;
   startedAt: number;
+  audioEnabled?: boolean;
+  audioMutedReason?: string;
+}
+
+interface AppRuntimeInfo {
+  name: string;
+  scrcpyPath: string;
+  scrcpyDir: string;
+  version: string;
+  platform: string;
+  appVersion: string;
 }
 
 interface LauncherSettings {
@@ -786,7 +797,6 @@ function MirrorWindow() {
         const decoder = new WebCodecsVideoDecoder({ codec, renderer: new CanvasFrameRenderer(canvas) });
         decoder.sizeChanged((size) => {
           setVideoSize(size);
-          void studioApi.fitMirrorWindow(size);
         });
         decoderRef.current = decoder;
         writerRef.current = decoder.writable.getWriter() as unknown as typeof writerRef.current;
@@ -906,10 +916,14 @@ export default function App() {
   const [utilityBusy, setUtilityBusy] = useState<string | null>(null);
   const [appError, setAppError] = useState("");
   const [appPlatform, setAppPlatform] = useState("win32");
+  const [appVersion, setAppVersion] = useState("");
+  const [scrcpyVersion, setScrcpyVersion] = useState("4.0");
+  const [updateStatusText, setUpdateStatusText] = useState("");
   const [virtualCameraStatus, setVirtualCameraStatus] = useState<VirtualCameraStatus | null>(null);
   const [virtualCameraBusy, setVirtualCameraBusy] = useState(false);
   const appIconsRef = useRef<Record<string, string | null>>({});
   const iconLoadingRef = useRef<Set<string>>(new Set());
+  const updateProgressLogRef = useRef(-1);
   const virtualBridgeRef = useRef<VirtualCameraBridge>({
     active: false,
     targetWidth: 1280,
@@ -1094,7 +1108,10 @@ export default function App() {
         setSettings(nextSettings);
         setDevices(nextDevices);
         setSessions(nextSessions);
-        setAppPlatform(appInfo.platform);
+        const runtimeInfo = appInfo as AppRuntimeInfo;
+        setAppPlatform(runtimeInfo.platform);
+        setAppVersion(runtimeInfo.appVersion);
+        setScrcpyVersion(runtimeInfo.version);
         setVirtualCameraStatus(nextVirtualCameraStatus as VirtualCameraStatus);
         setReady(true);
       } catch (error) {
@@ -1157,8 +1174,27 @@ export default function App() {
       if (event.type === "update") {
         const status = typeof event.status === "string" ? event.status : "status";
         const version = typeof event.version === "string" ? ` ${event.version}` : "";
-        const percent = typeof event.percent === "number" ? ` ${event.percent}%` : "";
+        const percentValue = typeof event.percent === "number" ? Math.max(0, Math.min(100, Math.round(event.percent))) : null;
+        const percent = percentValue !== null ? ` ${percentValue}%` : "";
         const message = typeof event.message === "string" ? `: ${event.message}` : "";
+        if (status === "downloading") {
+          setUpdateStatusText(`Downloading update${percent}.`);
+          if (percentValue !== null) {
+            const bucket = percentValue >= 100 ? 100 : Math.floor(percentValue / 25) * 25;
+            if (updateProgressLogRef.current < 0 || bucket >= updateProgressLogRef.current + 25 || bucket === 100) {
+              updateProgressLogRef.current = bucket;
+              addLog(`Update downloading ${percentValue}%`);
+            }
+          }
+          return;
+        }
+        updateProgressLogRef.current = -1;
+        if (status === "checking") setUpdateStatusText("Checking for updates.");
+        else if (status === "available") setUpdateStatusText(`Update${version} is available.`);
+        else if (status === "not-available") setUpdateStatusText(`KairoMirror v${appVersion || "unknown"} is current.`);
+        else if (status === "downloaded") setUpdateStatusText(`Update${version} downloaded. It will install when the app closes.`);
+        else if (status === "skipped") setUpdateStatusText(message.replace(/^: /, "") || "Update check skipped.");
+        else if (status === "error") setUpdateStatusText(`Update error${message}.`);
         addLog(`Update ${status}${version}${percent}${message}`, status === "error" ? "error" : "info");
       }
 
@@ -1181,7 +1217,7 @@ export default function App() {
         }
       }
     });
-  }, [addLog, refreshVirtualCameraStatus, upsertSession]);
+  }, [addLog, appVersion, refreshVirtualCameraStatus, upsertSession]);
 
   useEffect(() => {
     if (!studioApi) return undefined;
@@ -1733,7 +1769,7 @@ export default function App() {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <span className="eyebrow">scrcpy 4.0</span>
+            <span className="eyebrow">KairoMirror v{appVersion || "..."} · scrcpy {scrcpyVersion || "4.0"}</span>
             <h1>
               {activeView === "apps"
                 ? "Android Apps"
@@ -2141,8 +2177,10 @@ export default function App() {
             <article className="settings-panel">
               <div className="panel-heading">
                 <h2>Updates</h2>
-                <span>{settings.checkForUpdates ? "Startup check" : "Manual"}</span>
+                <span>v{appVersion || "..."}</span>
               </div>
+              <p className="panel-note">Current version: KairoMirror v{appVersion || "unknown"} with scrcpy {scrcpyVersion || "4.0"}.</p>
+              {updateStatusText ? <p className="panel-note">{updateStatusText}</p> : null}
               <ToggleRow label="Check for updates at startup" value={settings.checkForUpdates} onChange={(checkForUpdates) => updateSettings({ checkForUpdates })} />
               <div className="action-row">
                 <button className="ghost-action" type="button" onClick={() => void checkForUpdates()}>
@@ -2429,7 +2467,7 @@ export default function App() {
                 <div className="session-dot" />
                 <div>
                   <h3>{session.name}</h3>
-                  <p>{formatTime(session.startedAt)}</p>
+                  <p>{session.audioMutedReason ? `Muted · ${formatTime(session.startedAt)}` : formatTime(session.startedAt)}</p>
                 </div>
                 <button className="icon-button" type="button" title="Close window" onClick={() => void stopSession(session.id)}>
                   <X size={16} />

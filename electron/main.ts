@@ -143,6 +143,8 @@ interface AppSessionInfo {
   name: string;
   packageName: string;
   startedAt: number;
+  audioEnabled?: boolean;
+  audioMutedReason?: string;
 }
 
 interface BinaryXmlAttribute {
@@ -240,6 +242,8 @@ let virtualCameraConfig: { width: number; height: number; fps: number; mode: "st
 let directStreamToken = 0;
 let embeddedWindowHandle: string | null = null;
 let controlsHeight = 72;
+let mirrorVideoWidth = 0;
+let mirrorVideoHeight = 0;
 let shuttingDown = false;
 
 const SCRCPY_PACKET_FLAG_SESSION = 1n << 63n;
@@ -400,7 +404,12 @@ async function checkForUpdatesOnStartup() {
 }
 
 function sendVideoPacket(payload: Record<string, unknown>) {
-  if ((payload.type === "metadata" || payload.type === "session") && typeof payload.width === "number" && typeof payload.height === "number") {
+  if (
+    (payload.type === "metadata" || payload.type === "session") &&
+    typeof payload.width === "number" &&
+    typeof payload.height === "number" &&
+    payload.clientResized !== true
+  ) {
     fitMirrorWindowToVideo(payload.width, payload.height);
   }
   for (const window of BrowserWindow.getAllWindows()) {
@@ -410,6 +419,11 @@ function sendVideoPacket(payload: Record<string, unknown>) {
 
 function fitMirrorWindowToVideo(width: number, height: number) {
   if (!mirrorWindow || width <= 0 || height <= 0 || mirrorWindow.isDestroyed()) return;
+  const sameVideoSize = mirrorVideoWidth === width && mirrorVideoHeight === height;
+  mirrorVideoWidth = width;
+  mirrorVideoHeight = height;
+  mirrorWindow.setAspectRatio(width / height, { width: 0, height: MIRROR_CONTROLS_HEIGHT });
+  if (sameVideoSize) return;
 
   const workArea = screen.getDisplayMatching(mirrorWindow.getBounds()).workArea;
   const maxWidth = Math.max(320, workArea.width - 48);
@@ -419,7 +433,7 @@ function fitMirrorWindowToVideo(width: number, height: number) {
   const contentWidth = Math.max(320, Math.round(width * scale));
   const contentHeight = Math.max(420, Math.round(height * scale) + MIRROR_CONTROLS_HEIGHT);
 
-  mirrorWindow.setContentSize(contentWidth, contentHeight);
+  mirrorWindow.setContentSize(contentWidth, contentHeight, false);
   const bounds = mirrorWindow.getBounds();
   mirrorWindow.setBounds({
     x: Math.round(workArea.x + (workArea.width - bounds.width) / 2),
@@ -1346,7 +1360,7 @@ function listAppSessions(): AppSessionInfo[] {
   return [...appSessions.values()].map((session) => session.info);
 }
 
-function buildVirtualDisplayArgs(request: LaunchAndroidAppRequest) {
+function buildVirtualDisplayArgs(request: LaunchAndroidAppRequest, muteAudio: boolean) {
   const width = Math.max(320, Math.round(request.width || 1280));
   const height = Math.max(320, Math.round(request.height || 960));
   const dpi = Math.max(80, Math.round(request.dpi || 160));
@@ -1362,7 +1376,7 @@ function buildVirtualDisplayArgs(request: LaunchAndroidAppRequest) {
   if (request.noVdDestroyContent) args.push("--no-vd-destroy-content");
   if (request.displayImePolicy === "local") args.push("--display-ime-policy=local");
 
-  if (request.audio === false) {
+  if (request.audio === false || muteAudio) {
     args.push("--no-audio");
   } else {
     const audioSource = request.audioSource || "output";
@@ -1398,7 +1412,9 @@ function buildVirtualDisplayArgs(request: LaunchAndroidAppRequest) {
 
 async function launchAndroidAppWindow(request: LaunchAndroidAppRequest): Promise<AppSessionInfo> {
   await stopDirectScrcpy();
-  const args = buildVirtualDisplayArgs(request);
+  const muteAudio = request.audio !== false && [...appSessions.values()].some((session) => session.info.audioEnabled);
+  const audioMutedReason = muteAudio ? "Muted because another app window is already sharing Android audio." : undefined;
+  const args = buildVirtualDisplayArgs(request, muteAudio);
   const child = spawn(scrcpyExe, args, { cwd: scrcpyDir, windowsHide: false });
   const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const info: AppSessionInfo = {
@@ -1406,11 +1422,14 @@ async function launchAndroidAppWindow(request: LaunchAndroidAppRequest): Promise
     pid: child.pid,
     name: request.name || request.packageName,
     packageName: request.packageName,
-    startedAt: Date.now()
+    startedAt: Date.now(),
+    audioEnabled: request.audio !== false && !muteAudio,
+    audioMutedReason
   };
 
   appSessions.set(id, { process: child, info });
   sendScrcpyEvent({ type: "app-session", action: "started", session: info, command: [scrcpyExe, ...args].map(quoteArg).join(" ") });
+  if (audioMutedReason) sendScrcpyEvent({ type: "log", level: "warn", message: `${info.name}: ${audioMutedReason}` });
 
   child.stdout.on("data", (chunk) => {
     sendScrcpyEvent({ type: "log", level: "info", message: chunk.toString() });
@@ -1568,6 +1587,10 @@ function stopDirectAudio() {
 
 function startDirectAudio(profile: LaunchProfile, selectedDevice?: string) {
   stopDirectAudio();
+  if ([...appSessions.values()].some((session) => session.info.audioEnabled)) {
+    sendScrcpyEvent({ type: "audio", status: "disabled", message: "Muted because another app window is already sharing Android audio." });
+    return;
+  }
   const args = audioArgsFromProfile(profile, selectedDevice);
   if (!args) {
     sendScrcpyEvent({ type: "audio", status: "disabled" });
@@ -2061,6 +2084,8 @@ async function openMirrorWindow(request: MirrorWindowRequest) {
     mirrorWindow.focus();
   }
 
+  mirrorVideoWidth = 0;
+  mirrorVideoHeight = 0;
   mirrorWindow.webContents.send("mirror:start", request.profile);
   return true;
 }
