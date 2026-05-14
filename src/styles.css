@@ -914,6 +914,26 @@ select:disabled {
   background: #151b1c;
 }
 
+.status-callout {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #101617;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.status-callout.warning {
+  border-color: rgba(238, 184, 87, 0.34);
+  background: rgba(238, 184, 87, 0.08);
+  color: #f1d7a4;
+}
+
 .live-camera-strip {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(74px, 1fr));

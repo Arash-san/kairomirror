@@ -1,5 +1,12 @@
 @echo off
 @cd /d "%~dp0"
+set "REGSVR32=%SystemRoot%\SysWOW64\regsvr32.exe"
+set "REGSVR64=%SystemRoot%\System32\regsvr32.exe"
+if exist "%SystemRoot%\Sysnative\regsvr32.exe" set "REGSVR64=%SystemRoot%\Sysnative\regsvr32.exe"
+set "REGEXE=%SystemRoot%\System32\reg.exe"
+if exist "%SystemRoot%\Sysnative\reg.exe" set "REGEXE=%SystemRoot%\Sysnative\reg.exe"
+set "DLL32=%~dp0obs-virtualcam-module32.dll"
+set "DLL64=%~dp0obs-virtualcam-module64.dll"
 goto checkAdmin
 
 :checkAdmin
@@ -12,36 +19,20 @@ goto checkAdmin
 	)
 
 :checkDLL
-	echo Checking for 32-bit Virtual Cam registration...
-	reg query "HKLM\SOFTWARE\Classes\WOW6432Node\CLSID\{7361F8BC-9373-43D4-B93D-ECCD403C7909}" >nul 2>&1
-	if %errorLevel% == 0 (
-		echo 32-bit Virtual Cam found, skipping install...
-		echo.
-	) else (
-		echo 32-bit Virtual Cam not found, installing...
-		goto install32DLL
+	if not exist "%DLL64%" (
+		echo 64-bit Virtual Cam module missing: "%DLL64%"
+		goto end
 	)
-
-:CheckDLLContinue
-	echo Checking for 64-bit Virtual Cam registration...
-	reg query "HKLM\SOFTWARE\Classes\CLSID\{7361F8BC-9373-43D4-B93D-ECCD403C7909}" >nul 2>&1
-	if %errorLevel% == 0 (
-		echo 64-bit Virtual Cam found, skipping install...
-		echo.
-	) else (
-		echo 64-bit Virtual Cam not found, installing...
-		goto install64DLL
+	if not exist "%DLL32%" (
+		echo 32-bit Virtual Cam module missing: "%DLL32%"
+		goto end
 	)
-	goto endSuccess
+	goto install64DLL
 
 :install32DLL
 	echo Installing 32-bit Virtual Cam...
-	if exist "%~dp0\data\obs-plugins\win-dshow\obs-virtualcam-module32.dll" (
-		regsvr32.exe /i /s "%~dp0\data\obs-plugins\win-dshow\obs-virtualcam-module32.dll"
-	) else (
-		regsvr32.exe /i /s obs-virtualcam-module32.dll
-	)
-	reg query "HKLM\SOFTWARE\Classes\WOW6432Node\CLSID\{7361F8BC-9373-43D4-B93D-ECCD403C7909}" >nul 2>&1
+	"%REGSVR32%" /i /s "%DLL32%"
+	"%REGEXE%" query "HKLM\SOFTWARE\Classes\CLSID\{7361F8BC-9373-43D4-B93D-ECCD403C7909}" /reg:32 >nul 2>&1
 	if %errorLevel% == 0 (
 		echo 32-bit Virtual Cam successfully installed
 		echo.
@@ -50,20 +41,16 @@ goto checkAdmin
 		echo.
 		goto end
 	)
-	goto checkDLLContinue
+	goto endSuccess
 
 :install64DLL
 	echo Installing 64-bit Virtual Cam...
-	if exist "%~dp0\data\obs-plugins\win-dshow\obs-virtualcam-module64.dll" (
-		regsvr32.exe /i /s "%~dp0\data\obs-plugins\win-dshow\obs-virtualcam-module64.dll"
-	) else (
-		regsvr32.exe /i /s obs-virtualcam-module64.dll
-	)
-	reg query "HKLM\SOFTWARE\Classes\CLSID\{7361F8BC-9373-43D4-B93D-ECCD403C7909}" >nul 2>&1
+	"%REGSVR64%" /i /s "%DLL64%"
+	"%REGEXE%" query "HKLM\SOFTWARE\Classes\CLSID\{7361F8BC-9373-43D4-B93D-ECCD403C7909}" /reg:64 >nul 2>&1
 	if %errorLevel% == 0 (
 		echo 64-bit Virtual Cam successfully installed
 		echo.
-		goto endSuccess
+		goto install32DLL
 	) else (
 		echo 64-bit Virtual Cam installation failed
 		echo.

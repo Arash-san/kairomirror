@@ -1,4 +1,5 @@
 import {
+  AlertCircle,
   AppWindow,
   ArrowLeft,
   Camera,
@@ -1331,6 +1332,27 @@ export default function App() {
   );
   const v4l2Available = appPlatform === "linux";
   const isCameraRunning = Boolean(virtualCameraStatus?.running);
+  const virtualCameraStartBlockedReason = useMemo(() => {
+    if (v4l2Available) return "";
+    if (!virtualCameraStatus) return "Start webcam is disabled while KairoMirror checks Windows virtual camera registration.";
+    if (!virtualCameraStatus.dll64) return "Start webcam is disabled because the bundled 64-bit KairoMirror Webcam module is missing.";
+    if (!virtualCameraStatus.writer) return "Start webcam is disabled because the bundled virtual camera frame writer is missing.";
+    if (!virtualCameraStatus.registered64 && virtualCameraStatus.registered32) {
+      return "Start webcam is disabled because only the 32-bit DirectShow camera is registered. KairoMirror is a 64-bit app, so Install/repair must register the 64-bit camera too.";
+    }
+    if (!virtualCameraStatus.registered64) {
+      return "Start webcam is disabled because the 64-bit KairoMirror Webcam DirectShow camera is not registered. Use Install/repair and approve the Windows elevation prompt.";
+    }
+    return "";
+  }, [v4l2Available, virtualCameraStatus]);
+  const virtualCameraRegistrationMessage = useMemo(() => {
+    if (virtualCameraStartBlockedReason) return virtualCameraStartBlockedReason;
+    if (!v4l2Available && virtualCameraStatus?.registered64 && !virtualCameraStatus.registered32) {
+      return "KairoMirror can start the webcam because the 64-bit camera is registered, but 32-bit apps will not see it until Install/repair registers the 32-bit camera too.";
+    }
+    return "";
+  }, [v4l2Available, virtualCameraStartBlockedReason, virtualCameraStatus]);
+  const startWebcamDisabled = virtualCameraBusy || Boolean(virtualCameraStartBlockedReason);
   const cameraTransform = useMemo(() => cameraTransformFromOrientation(settings.cameraOrientation), [settings.cameraOrientation]);
 
   useEffect(() => {
@@ -1564,11 +1586,12 @@ export default function App() {
     if (!studioApi) return;
     setVirtualCameraBusy(true);
     try {
-      await studioApi.installVirtualCamera();
-      addLog("OBS DirectShow virtual camera registered.");
-      await refreshVirtualCameraStatus();
+      const status = (await studioApi.installVirtualCamera()) as VirtualCameraStatus;
+      setVirtualCameraStatus(status);
+      addLog("KairoMirror Webcam registered for 64-bit and 32-bit apps.");
     } catch (error) {
       addLog(`Virtual camera install failed: ${errorMessage(error)}`, "error");
+      await refreshVirtualCameraStatus();
     } finally {
       setVirtualCameraBusy(false);
     }
@@ -2294,13 +2317,25 @@ export default function App() {
                     </div>
                   </div>
                   <p className="panel-note">
-                    Uses OBS's DirectShow module and shared-memory frame queue. Install/repair opens the Windows elevation prompt because camera registration writes to HKLM.
+                    Uses OBS's DirectShow module and shared-memory frame queue. Install/repair opens Windows elevation, registers the 64-bit camera first, then the 32-bit camera, and verifies both registry views.
                   </p>
+                  {virtualCameraRegistrationMessage ? (
+                    <div className="status-callout warning">
+                      <AlertCircle size={18} />
+                      <span>{virtualCameraRegistrationMessage}</span>
+                    </div>
+                  ) : null}
                 </>
               )}
               <div className="action-row">
                 {!v4l2Available ? (
-                  <button className="ghost-action" type="button" onClick={() => void installVirtualCamera()} disabled={virtualCameraBusy || !virtualCameraStatus?.available}>
+                  <button
+                    className="ghost-action"
+                    type="button"
+                    onClick={() => void installVirtualCamera()}
+                    disabled={virtualCameraBusy || !virtualCameraStatus?.available}
+                    title="Register and verify both the 64-bit and 32-bit KairoMirror Webcam DirectShow cameras"
+                  >
                     Install/repair
                   </button>
                 ) : null}
@@ -2308,7 +2343,8 @@ export default function App() {
                   className="primary-action"
                   type="button"
                   onClick={() => void startCameraVirtual()}
-                  disabled={virtualCameraBusy || (!v4l2Available && !virtualCameraStatus?.registered64)}
+                  disabled={startWebcamDisabled}
+                  title={startWebcamDisabled ? virtualCameraStartBlockedReason || "Virtual camera is busy." : "Start KairoMirror Webcam"}
                 >
                   <Camera size={18} />
                   Start webcam
@@ -2320,7 +2356,7 @@ export default function App() {
               </div>
               {!v4l2Available ? (
                 <div className="secondary-action-row">
-                  <button type="button" onClick={() => void startVirtualCameraTest()} disabled={virtualCameraBusy || !virtualCameraStatus?.registered64}>
+                  <button type="button" onClick={() => void startVirtualCameraTest()} disabled={startWebcamDisabled} title={startWebcamDisabled ? virtualCameraStartBlockedReason || "Virtual camera is busy." : "Start a local test pattern"}>
                     Test pattern
                   </button>
                   <button type="button" onClick={() => void uninstallVirtualCamera()} disabled={virtualCameraBusy || (!virtualCameraStatus?.registered64 && !virtualCameraStatus?.registered32)}>

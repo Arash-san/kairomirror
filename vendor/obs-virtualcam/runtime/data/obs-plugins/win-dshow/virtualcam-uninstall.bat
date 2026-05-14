@@ -1,5 +1,10 @@
 @echo off
 @cd /d "%~dp0"
+set "REGSVR32=%SystemRoot%\SysWOW64\regsvr32.exe"
+set "REGSVR64=%SystemRoot%\System32\regsvr32.exe"
+if exist "%SystemRoot%\Sysnative\regsvr32.exe" set "REGSVR64=%SystemRoot%\Sysnative\regsvr32.exe"
+set "DLL32=%~dp0obs-virtualcam-module32.dll"
+set "DLL64=%~dp0obs-virtualcam-module64.dll"
 goto checkAdmin
 
 :checkAdmin
@@ -12,16 +17,8 @@ goto checkAdmin
 	)
 
 :uninstallDLLs
-	if exist "%~dp0\data\obs-plugins\win-dshow\obs-virtualcam-module32.dll" (
-		regsvr32.exe /u /s "%~dp0\data\obs-plugins\win-dshow\obs-virtualcam-module32.dll"
-	) else (
-		regsvr32.exe /u /s obs-virtualcam-module32.dll
-	)
-	if exist "%~dp0\data\obs-plugins\win-dshow\obs-virtualcam-module64.dll" (
-		regsvr32.exe /u /s "%~dp0\data\obs-plugins\win-dshow\obs-virtualcam-module64.dll"
-	) else (
-		regsvr32.exe /u /s obs-virtualcam-module64.dll
-	)
+	if exist "%DLL64%" "%REGSVR64%" /u /s "%DLL64%"
+	if exist "%DLL32%" "%REGSVR32%" /u /s "%DLL32%"
 
 :endSuccess
 	echo Virtual Cam uninstalled!

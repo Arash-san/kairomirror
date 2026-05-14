@@ -587,9 +587,11 @@ function obsVirtualCamDll(arch: "32" | "64") {
   return path.join(obsVirtualCamRuntimeDir, `obs-virtualcam-module${arch}.dll`);
 }
 
-async function registryKeyExists(key: string) {
+async function registryKeyExists(key: string, registryView?: "32" | "64") {
   try {
-    const result = await runFile("reg.exe", ["query", key], resourceRoot, 6000);
+    const args = ["query", key];
+    if (registryView) args.push(`/reg:${registryView}`);
+    const result = await runFile("reg.exe", args, resourceRoot, 6000);
     return result.exitCode === 0;
   } catch {
     return false;
@@ -601,13 +603,13 @@ async function getVirtualCameraStatus() {
     fileExists(obsVirtualCamDll("64")),
     fileExists(obsVirtualCamDll("32")),
     fileExists(obsVirtualCamWriterScript),
-    process.platform === "win32" ? registryKeyExists(`HKLM\\SOFTWARE\\Classes\\CLSID\\${obsVirtualCamGuid}`) : Promise.resolve(false),
-    process.platform === "win32" ? registryKeyExists(`HKLM\\SOFTWARE\\Classes\\WOW6432Node\\CLSID\\${obsVirtualCamGuid}`) : Promise.resolve(false)
+    process.platform === "win32" ? registryKeyExists(`HKLM\\SOFTWARE\\Classes\\CLSID\\${obsVirtualCamGuid}`, "64") : Promise.resolve(false),
+    process.platform === "win32" ? registryKeyExists(`HKLM\\SOFTWARE\\Classes\\CLSID\\${obsVirtualCamGuid}`, "32") : Promise.resolve(false)
   ]);
 
   return {
     platform: process.platform,
-    available: process.platform === "win32" && dll64 && writer,
+    available: process.platform === "win32" && dll64 && dll32 && writer,
     running: Boolean(virtualCameraProcess),
     config: virtualCameraConfig,
     registered64,
@@ -628,17 +630,43 @@ async function registerVirtualCamera(action: "install" | "uninstall") {
   if (!(await fileExists(dll64))) throw new Error(`Missing OBS virtual camera module: ${dll64}`);
   if (!(await fileExists(dll32))) throw new Error(`Missing OBS 32-bit virtual camera module: ${dll32}`);
 
-  const register32 = action === "install" ? `& "$env:SystemRoot\\SysWOW64\\regsvr32.exe" /i /s ${psQuote(dll32)}` : `& "$env:SystemRoot\\SysWOW64\\regsvr32.exe" /u /s ${psQuote(dll32)}`;
-  const register64 = action === "install" ? `& "$env:SystemRoot\\System32\\regsvr32.exe" /i /s ${psQuote(dll64)}` : `& "$env:SystemRoot\\System32\\regsvr32.exe" /u /s ${psQuote(dll64)}`;
+  const regArgs = action === "install" ? '@("/i", "/s")' : '@("/u", "/s")';
   const script = `
 $ErrorActionPreference = "Stop"
-${register32}
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-${register64}
-exit $LASTEXITCODE
+$regSvr32 = Join-Path $env:SystemRoot "SysWOW64\\regsvr32.exe"
+$regSvr64 = Join-Path $env:SystemRoot "System32\\regsvr32.exe"
+$sysnativeRegSvr64 = Join-Path $env:SystemRoot "Sysnative\\regsvr32.exe"
+if (Test-Path $sysnativeRegSvr64) { $regSvr64 = $sysnativeRegSvr64 }
+$regExe = Join-Path $env:SystemRoot "System32\\reg.exe"
+$sysnativeRegExe = Join-Path $env:SystemRoot "Sysnative\\reg.exe"
+if (Test-Path $sysnativeRegExe) { $regExe = $sysnativeRegExe }
+if (!(Test-Path $regSvr64)) { throw "64-bit regsvr32.exe was not found at $regSvr64" }
+if (!(Test-Path $regSvr32)) { throw "32-bit regsvr32.exe was not found at $regSvr32" }
+if (!(Test-Path $regExe)) { throw "reg.exe was not found at $regExe" }
+function Invoke-KairoMirrorRegSvr([string]$exe, [string]$dll, [string]$label) {
+  & $exe ${regArgs} $dll
+  if ($LASTEXITCODE -ne 0) { throw "$label registration failed with exit code $LASTEXITCODE." }
+}
+Invoke-KairoMirrorRegSvr $regSvr64 ${psQuote(dll64)} "64-bit KairoMirror Webcam"
+Invoke-KairoMirrorRegSvr $regSvr32 ${psQuote(dll32)} "32-bit KairoMirror Webcam"
+if (${action === "install" ? "$true" : "$false"}) {
+  & $regExe query "HKLM\\SOFTWARE\\Classes\\CLSID\\${obsVirtualCamGuid}" /reg:64 *> $null
+  if ($LASTEXITCODE -ne 0) { throw "64-bit KairoMirror Webcam registration did not appear in the 64-bit registry view." }
+  & $regExe query "HKLM\\SOFTWARE\\Classes\\CLSID\\${obsVirtualCamGuid}" /reg:32 *> $null
+  if ($LASTEXITCODE -ne 0) { throw "32-bit KairoMirror Webcam registration did not appear in the 32-bit registry view." }
+}
+exit 0
 `;
   await runElevatedPowerShell(script, 120000);
-  return getVirtualCameraStatus();
+  const status = await getVirtualCameraStatus();
+  if (action === "install" && (!status.registered64 || !status.registered32)) {
+    const missing = [
+      status.registered64 ? "" : "64-bit",
+      status.registered32 ? "" : "32-bit"
+    ].filter(Boolean).join(" and ");
+    throw new Error(`Virtual camera registration is incomplete: ${missing} DirectShow camera is not registered. Start webcam requires the 64-bit camera because KairoMirror is a 64-bit app.`);
+  }
+  return status;
 }
 
 function frameBufferFromRequest(request: VirtualCameraFrameRequest) {
@@ -664,6 +692,10 @@ async function stopVirtualCameraStream() {
 async function startVirtualCameraStream(request: VirtualCameraStartRequest) {
   if (process.platform !== "win32") {
     throw new Error("The Windows virtual camera bridge requires Windows.");
+  }
+  const status = await getVirtualCameraStatus();
+  if (!status.registered64) {
+    throw new Error("Start webcam is disabled because the 64-bit KairoMirror Webcam DirectShow camera is not registered. Use Install/repair and approve the Windows elevation prompt.");
   }
   if (!(await fileExists(obsVirtualCamWriterScript))) {
     throw new Error(`Missing virtual camera writer: ${obsVirtualCamWriterScript}`);
